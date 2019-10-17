@@ -7,7 +7,7 @@ app_name = 'HealthNotifier'
 notify2.init(app_name)
 cap = cv2.VideoCapture(0)
 ret, frame = cap.read()
-ret = True
+#ret = True
 #frame = cv2.imread('k.jpg')
 if ret:
 	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -38,8 +38,6 @@ if ret:
 			angle = math.atan(slope) * 180 / math.pi
 		else:
 			angle = 0
-
-		print(angle)
 
 		if angle > 20:
 			notification = notify2.Notification(app_name, 'Your head is tilted to the left')
