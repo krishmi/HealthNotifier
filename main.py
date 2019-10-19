@@ -1,12 +1,74 @@
 from tkinter import *
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
+import tkinter
 import os
 import cv2
+import numpy as np
+import notify2
+import math
+
+def notifier():
+	app_name = 'HealthNotifier'
+	notify2.init(app_name)
+	cap = cv2.VideoCapture(0)
+	ret, frame = cap.read()
+	if ret:
+		gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+		face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+		eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
+		faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+		if len(faces) == 1:
+			left_eye_x = left_eye_y = right_eye_x = right_eye_y = 0
+			(x,y,w,h) = faces[0]
+			img = cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
+			roi_gray = gray[y:y+h, x:x+w]
+			roi_color = frame[y:y+h, x:x+w]
+			eyes = eye_cascade.detectMultiScale(roi_gray, 1.3, 6)
+
+			if len(eyes) > 1:
+				(ex,ey,ew,eh) = eyes[0]
+				left_eye_x = ex + ew / 2
+				left_eye_y = ey + eh / 2
+				cv2.rectangle(roi_color,(ex,ey),(ex+ew,ey+eh),(0,255,0),2)
+
+				(ex,ey,ew,eh) = eyes[1]
+				right_eye_x = ex + ew / 2
+				right_eye_y = ey + eh / 2
+				cv2.rectangle(roi_color,(ex,ey),(ex+ew,ey+eh),(0,0,255),2)
+
+			if right_eye_x - left_eye_x != 0:
+				slope = (right_eye_y - left_eye_y) / (right_eye_x - left_eye_x)
+				angle = math.atan(slope) * 180 / math.pi
+			else:
+				angle = 0
+
+			if angle > 20:
+				notification = notify2.Notification(app_name, 'Your head is tilted to the left')
+				notification.show()
+			elif angle < -20:
+				notification = notify2.Notification(app_name, 'Your head is tilted to the right')
+				notification.show()
+
+			with open('FirstRun', 'r') as f:
+				specs = f.readlines()
+				focal_length = float(specs[0])
+				width = float(specs[1])
+				original_distance = float(specs[2])
+				distance = width * focal_length / w
+				print(original_distance, distance)
+				//notify accordingly
+
+	#cap.release()
+	cap.release()
+	cv2.imshow('img',frame)
+	cv2.waitKey(0)
+	cv2.destroyAllWindows()
 
 def changeFrame(dir = 0):
 	global index
 	global cap
+	global root
 	ind = index
 	if index == 0:
 		index = 1
@@ -19,6 +81,11 @@ def changeFrame(dir = 0):
 		if dir == -1:
 			index = 1
 		else:
+			try:
+				var = int(distance_str.get()) / int(width_str.get())
+			except:
+				tkinter.messagebox.showerror('Error', 'Value of width and distance must be non zero number')
+				return
 			index = 3
 	elif index == 3:
 		index = 4
@@ -26,10 +93,18 @@ def changeFrame(dir = 0):
 		if dir == -1:
 			index = 3
 		else:
+			focal_length = pixels * float(distance_str.get()) / float(width_str.get())
+			with open('FirstRun', 'w') as f:
+				f.write(str(focal_length))
+				f.write('\n')
+				f.write(str(float(width_str.get())))
+				f.write('\n')
+				f.write(str(float(distance_str.get())))
+				f.write('\n')
 			index = 5
 	elif index == 5:
 		cap.release()
-		#os.system('python healthNotifier.py')
+		root.quit()
 
 	if not ind == 5:
 		frames[ind].grid_forget()
@@ -45,6 +120,7 @@ def changeFrame(dir = 0):
 
 def defineFrames(frames):
 	#root
+	global root
 	root = Tk()
 	root.title('HealthNotifier')
 	root.resizable(0, 0)
@@ -97,6 +173,7 @@ def defineFrames(frames):
 	labelFrame = ttk.LabelFrame(page, text='Width of object')
 	Label(labelFrame, text='Enter the width of the object whose snapshot is to be taken', wraplength=450).grid(
 		row=0, column=0, pady=10, padx=10, sticky='w')
+	global width_str, distance_str
 	width_str = StringVar()
 	Entry(labelFrame, textvariable=width_str).grid(row=1, column=0, padx=10, pady=10, rowspan=2, sticky='w')
 	labelFrame.grid(sticky="nw", padx=15, pady=10)
@@ -142,6 +219,7 @@ def defineFrames(frames):
 	frames.append(page)
 	
 	frames[0].grid(sticky='news')
+	root.protocol("WM_DELETE_WINDOW", ask_quit)
 	root.mainloop()
 
 
@@ -173,21 +251,44 @@ def takeSnap(lmain):
 			global id
 			lmain.after_cancel(id)
 			frame = cv2.flip(frame, 1)
+			gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+			face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+			faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+			if len(faces) == 1:
+				(x,y,w,h) = faces[0]
+				global pixels
+				pixels = w
+			else:
+				tkinter.messagebox.showerror('Error', 'Error in detecting face!')
+				changeFrame(-1)
+				return
+
 			cv2image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
 			img = Image.fromarray(cv2image)
 			imgtk = ImageTk.PhotoImage(image=img)
 			lmain.imgtk = imgtk
 			lmain.configure(image=imgtk)
 
+def ask_quit():
+	if not index == 5:
+		os.remove('FirstRun')
+
+	if tkinter.messagebox.askokcancel("Quit", "You want to quit now?"):
+		root.quit()
+
+
+id = 0
+index = 0
+cap = None
+focal_length = 0
+pixels = 0
+
 #installer
 if not os.path.exists('FirstRun'):
-	#file = open('FirstRun', '+w')
-	#file.close()
+	file = open('FirstRun', '+w')
+	file.close()
 	frames = []
-	id = 0
-	index = 0
-	cap = None
 	defineFrames(frames)
 	
 else:
-	os.system('python healthNotifier.py')
+	notifier()
